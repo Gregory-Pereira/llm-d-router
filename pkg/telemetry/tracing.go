@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/common"
 	"go.opentelemetry.io/otel"
@@ -32,6 +33,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -73,6 +76,13 @@ func InitTracing(ctx context.Context) (func(context.Context) error, error) {
 	exporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(endpoint),
 		otlptracegrpc.WithInsecure(), // Use WithTLSCredentials() in production
+		otlptracegrpc.WithDialOption(
+			grpc.WithKeepaliveParams(keepalive.ClientParameters{
+				Time:                30 * time.Second,
+				Timeout:             10 * time.Second,
+				PermitWithoutStream: false,
+			}),
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
