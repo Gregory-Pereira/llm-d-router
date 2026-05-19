@@ -144,6 +144,7 @@ var (
 		KVConnectorNIXLV2:        {},
 		KVConnectorSharedStorage: {},
 		KVConnectorSGLang:        {},
+		KVConnectorMooncake:      {},
 	}
 
 	// supportedECConnectors defines all valid E/P EC connector types
@@ -158,7 +159,7 @@ var (
 		encodeStage:  {},
 	}
 
-	supportedKVConnectorNamesStr = strings.Join([]string{KVConnectorNIXLV2, KVConnectorSharedStorage, KVConnectorSGLang}, ", ")
+	supportedKVConnectorNamesStr = strings.Join([]string{KVConnectorNIXLV2, KVConnectorSharedStorage, KVConnectorSGLang, KVConnectorMooncake}, ", ")
 	supportedECConnectorNamesStr = strings.Join([]string{ECExampleConnector}, ", ")
 	supportedTLSStageNamesStr    = strings.Join([]string{prefillStage, decodeStage, encodeStage}, ", ")
 )

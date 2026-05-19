@@ -143,6 +143,43 @@ func (cc *ChatCompletionHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 
 		}
 
+	case "mooncake":
+		switch cc.Role {
+		case RoleDecode:
+			rawResponse = `{"id":"chatcmpl-test","object":"chat.completion","choices":[],"usage":{"prompt_tokens":64,"completion_tokens":1,"total_tokens":65,"prompt_tokens_details":{"cached_tokens":49}}}`
+		case RolePrefill:
+			kvTransferParams, ok := completionRequest["kv_transfer_params"]
+			if !ok || kvTransferParams == nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("expected kv_transfer_params:{...}")) //nolint:all
+				return
+			}
+			kvTransferParamsMap, ok := kvTransferParams.(map[string]any)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("expected kv_transfer_params:{...}")) //nolint:all
+				return
+			}
+			if v, ok := kvTransferParamsMap["do_remote_decode"]; !ok || !v.(bool) {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("expected do_remote_decode:true")) //nolint:all
+				return
+			}
+			if v, ok := kvTransferParamsMap["do_remote_prefill"]; !ok || v.(bool) {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("expected do_remote_prefill:false")) //nolint:all
+				return
+			}
+			if _, ok := kvTransferParamsMap["transfer_id"]; !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("expected transfer_id to be present")) //nolint:all
+				return
+			}
+
+			// Mooncake prefiller does NOT return kv_transfer_params (returns None in vLLM)
+			rawResponse = `{"usage":{"prompt_tokens":64,"completion_tokens":1,"total_tokens":65,"prompt_tokens_details":{"cached_tokens":7}}}`
+		}
+
 	case "shared-storage":
 		// Shared Storage protocol just returns empty response
 		rawResponse = `{}`

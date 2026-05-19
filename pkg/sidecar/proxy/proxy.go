@@ -68,6 +68,10 @@ const (
 	requestFieldBootstrapPort = "bootstrap_port"
 	requestFieldBootstrapRoom = "bootstrap_room"
 
+	// Mooncake fields
+	requestFieldTransferID          = "transfer_id"
+	requestFieldRemoteBootstrapAddr = "remote_bootstrap_addr"
+
 	// KVConnectorNIXLV2 enables the P/D KV NIXL v2 protocol
 	KVConnectorNIXLV2 = "nixlv2"
 
@@ -76,6 +80,9 @@ const (
 
 	// KVConnectorSGLang enables SGLang the P/D KV disaggregation protocol
 	KVConnectorSGLang = "sglang"
+
+	// KVConnectorMooncake enables the Mooncake P2P KV transfer protocol
+	KVConnectorMooncake = "mooncake"
 
 	// ECExampleConnector enables the Encoder disaggregation protocol (E/PD, E/P/D)
 	ECExampleConnector = "ec-example"
@@ -225,11 +232,12 @@ type Server struct {
 	prefillerURLPrefix      string
 	encoderURLPrefix        string
 
-	decoderProxy        http.Handler                     // decoder proxy handler
-	prefillerProxies    *lru.Cache[string, http.Handler] // cached prefiller proxy handlers
-	encoderProxies      *lru.Cache[string, http.Handler] // cached encoder proxy handlers
-	dataParallelProxies map[string]http.Handler          // Proxies to other vLLM servers
-	forwardDataParallel bool                             // Use special Data Parallel work around
+	decoderProxy           http.Handler                     // decoder proxy handler
+	prefillerProxies       *lru.Cache[string, http.Handler] // cached prefiller proxy handlers
+	encoderProxies         *lru.Cache[string, http.Handler] // cached encoder proxy handlers
+	mooncakeBootstrapCache *lru.Cache[string, string]       // cached prefiller host → engine_id
+	dataParallelProxies    map[string]http.Handler          // Proxies to other vLLM servers
+	forwardDataParallel    bool                             // Use special Data Parallel work around
 
 	prefillSamplerFn func(n int) int // allow test override
 
@@ -240,17 +248,19 @@ type Server struct {
 func NewProxy(config Config) *Server {
 	prefillerCache, _ := lru.New[string, http.Handler](1024) // nolint:errcheck
 	encoderCache, _ := lru.New[string, http.Handler](1024)   // nolint:errcheck
+	bootstrapCache, _ := lru.New[string, string](1024)       // nolint:errcheck
 
 	server := &Server{
-		readyCh:             make(chan struct{}),
-		prefillerProxies:    prefillerCache,
-		encoderProxies:      encoderCache,
-		prefillerURLPrefix:  "http://",
-		encoderURLPrefix:    "http://",
-		config:              config,
-		dataParallelProxies: map[string]http.Handler{},
-		forwardDataParallel: true,
-		prefillSamplerFn:    rand.IntN,
+		readyCh:                make(chan struct{}),
+		prefillerProxies:       prefillerCache,
+		encoderProxies:         encoderCache,
+		mooncakeBootstrapCache: bootstrapCache,
+		prefillerURLPrefix:     "http://",
+		encoderURLPrefix:       "http://",
+		config:                 config,
+		dataParallelProxies:    map[string]http.Handler{},
+		forwardDataParallel:    true,
+		prefillSamplerFn:       rand.IntN,
 	}
 
 	server.setKVConnector()
@@ -316,6 +326,7 @@ func (s *Server) Clone() *Server {
 		encoderURLPrefix:        s.encoderURLPrefix,
 		prefillerProxies:        s.prefillerProxies,
 		encoderProxies:          s.encoderProxies,
+		mooncakeBootstrapCache:  s.mooncakeBootstrapCache,
 		dataParallelProxies:     s.dataParallelProxies,
 		forwardDataParallel:     s.forwardDataParallel,
 		prefillSamplerFn:        s.prefillSamplerFn,
@@ -364,6 +375,8 @@ func (s *Server) setKVConnector() {
 		s.runPDConnectorProtocol = func(w http.ResponseWriter, r *http.Request, host string, _ APIType) {
 			s.runSGLangProtocol(w, r, host)
 		}
+	case KVConnectorMooncake:
+		s.runPDConnectorProtocol = s.runMooncakeProtocol
 	case KVConnectorNIXLV2:
 		fallthrough
 	default:

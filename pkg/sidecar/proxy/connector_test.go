@@ -44,7 +44,7 @@ type sidecarTestInfo struct {
 	proxy          *Server
 }
 
-var connectors = []string{KVConnectorSharedStorage, KVConnectorNIXLV2}
+var connectors = []string{KVConnectorSharedStorage, KVConnectorNIXLV2, KVConnectorMooncake}
 
 var _ = Describe("Common Connector tests", func() {
 
@@ -194,8 +194,23 @@ func sidecarConnectionTestSetup(connector string) *sidecarTestInfo {
 		Connector: connector,
 		Role:      mock.RolePrefill,
 	}
-	testInfo.prefillBackend = httptest.NewServer(testInfo.prefillHandler)
+
+	if connector == KVConnectorMooncake {
+		bootstrapHandler := &mock.MooncakeBootstrapHandler{}
+		mux := mock.NewMooncakePrefillMux(testInfo.prefillHandler, bootstrapHandler)
+		testInfo.prefillBackend = httptest.NewServer(mux)
+	} else {
+		testInfo.prefillBackend = httptest.NewServer(testInfo.prefillHandler)
+	}
 	DeferCleanup(testInfo.prefillBackend.Close)
+
+	if connector == KVConnectorMooncake {
+		prefillURL, err := url.Parse(testInfo.prefillBackend.URL)
+		Expect(err).ToNot(HaveOccurred())
+		port, err := parsePort(prefillURL.Port())
+		Expect(err).ToNot(HaveOccurred())
+		mooncakeBootstrapPort = port
+	}
 
 	// Proxy
 	url, err := url.Parse(testInfo.decodeBackend.URL)
