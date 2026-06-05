@@ -34,16 +34,16 @@ import (
 )
 
 type mockTokenizer struct {
-	renderFunc     func(prompt string) ([]uint32, []tokenizerTypes.Offset, error)
-	renderChatFunc func(req *tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error)
+	renderFunc     func(payload fwkrh.RequestPayload) ([]uint32, []tokenizerTypes.Offset, error)
+	renderChatFunc func(payload fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error)
 }
 
-func (m *mockTokenizer) Render(_ context.Context, prompt string) ([]uint32, []tokenizerTypes.Offset, error) {
-	return m.renderFunc(prompt)
+func (m *mockTokenizer) Render(_ context.Context, payload fwkrh.RequestPayload) ([]uint32, []tokenizerTypes.Offset, error) {
+	return m.renderFunc(payload)
 }
 
-func (m *mockTokenizer) RenderChat(_ context.Context, req *tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error) {
-	return m.renderChatFunc(req)
+func (m *mockTokenizer) RenderChat(_ context.Context, payload fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error) {
+	return m.renderChatFunc(payload)
 }
 
 func newTestPlugin(tok tokenizer) *Plugin {
@@ -126,7 +126,7 @@ func TestProduce_PopulatesTokenizedPrompt(t *testing.T) {
 		},
 	}
 	tok := &mockTokenizer{
-		renderChatFunc: func(_ *tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error) {
+		renderChatFunc: func(_ fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error) {
 			return []uint32{1, 2, 3, 4}, mm, nil
 		},
 	}
@@ -137,6 +137,7 @@ func TestProduce_PopulatesTokenizedPrompt(t *testing.T) {
 			ChatCompletions: &fwkrh.ChatCompletionsRequest{
 				Messages: []fwkrh.Message{{Role: "user", Content: fwkrh.Content{Raw: "hi"}}},
 			},
+			Payload: fwkrh.PayloadMap{},
 		},
 	}
 	require.NoError(t, p.Produce(context.Background(), req, nil))
@@ -163,7 +164,7 @@ func TestProduce_SkipsWhenAlreadyPopulated(t *testing.T) {
 
 func TestProduce_SetsCacheSaltOnSkipPath(t *testing.T) {
 	tok := &mockTokenizer{
-		renderChatFunc: func(*tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error) {
+		renderChatFunc: func(fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error) {
 			t.Fatal("backend must not run on the skip path")
 			return nil, nil, nil
 		},
@@ -184,7 +185,7 @@ func TestProduce_SetsCacheSaltOnSkipPath(t *testing.T) {
 
 func TestRenderBackend_CompletionsTokenIDsPassthrough(t *testing.T) {
 	tok := &mockTokenizer{
-		renderFunc: func(string) ([]uint32, []tokenizerTypes.Offset, error) {
+		renderFunc: func(fwkrh.RequestPayload) ([]uint32, []tokenizerTypes.Offset, error) {
 			t.Fatal("render must not run when token IDs are provided")
 			return nil, nil, nil
 		},
@@ -196,19 +197,21 @@ func TestRenderBackend_CompletionsTokenIDsPassthrough(t *testing.T) {
 	assert.Equal(t, []uint32{5, 6, 7}, tp.TokenIDs)
 }
 
-func TestRenderBackend_CompletionsArrayUsesPlainText(t *testing.T) {
-	var got string
+func TestRenderBackend_CompletionsArrayUsesPayload(t *testing.T) {
+	var gotPayload fwkrh.RequestPayload
 	tok := &mockTokenizer{
-		renderFunc: func(prompt string) ([]uint32, []tokenizerTypes.Offset, error) {
-			got = prompt
+		renderFunc: func(payload fwkrh.RequestPayload) ([]uint32, []tokenizerTypes.Offset, error) {
+			gotPayload = payload
 			return []uint32{1}, nil, nil
 		},
 	}
+	payload := fwkrh.PayloadMap{"prompt": "alpha beta"}
 	_, err := renderBackend{tk: tok}.produce(context.Background(), &fwkrh.InferenceRequestBody{
 		Completions: &fwkrh.CompletionsRequest{Prompt: fwkrh.Prompt{Strings: []string{"alpha", "beta"}}},
+		Payload:     payload,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "alpha beta", got)
+	assert.Equal(t, payload, gotPayload)
 }
 
 func TestProduce_NilBody(t *testing.T) {
@@ -221,7 +224,7 @@ func TestProduce_NilBody(t *testing.T) {
 
 func TestProduce_TokenizerError(t *testing.T) {
 	tok := &mockTokenizer{
-		renderChatFunc: func(_ *tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error) {
+		renderChatFunc: func(_ fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error) {
 			return nil, nil, assert.AnError
 		},
 	}
@@ -231,6 +234,7 @@ func TestProduce_TokenizerError(t *testing.T) {
 			ChatCompletions: &fwkrh.ChatCompletionsRequest{
 				Messages: []fwkrh.Message{{Role: "user", Content: fwkrh.Content{Raw: "hi"}}},
 			},
+			Payload: fwkrh.PayloadMap{},
 		},
 	}
 	err := p.Produce(context.Background(), req, nil)
@@ -242,7 +246,9 @@ func TestProduce_TokenizerError(t *testing.T) {
 func TestProduce_UnsupportedBodyType(t *testing.T) {
 	p := newTestPlugin(&mockTokenizer{})
 	req := &scheduling.InferenceRequest{
-		Body: &fwkrh.InferenceRequestBody{}, // no Completions or ChatCompletions
+		Body: &fwkrh.InferenceRequestBody{
+			Payload: fwkrh.PayloadMap{},
+		},
 	}
 	err := p.Produce(context.Background(), req, nil)
 	require.Error(t, err)
@@ -251,13 +257,12 @@ func TestProduce_UnsupportedBodyType(t *testing.T) {
 }
 
 func TestProduce_GenerateUsesPreTokenizedIDs(t *testing.T) {
-	// Generate requests carry pre-tokenized IDs — the tokenizer must NOT be called.
 	tok := &mockTokenizer{
-		renderFunc: func(_ string) ([]uint32, []tokenizerTypes.Offset, error) {
+		renderFunc: func(_ fwkrh.RequestPayload) ([]uint32, []tokenizerTypes.Offset, error) {
 			t.Error("tokenizer.Render must not be called for generate requests")
 			return nil, nil, nil
 		},
-		renderChatFunc: func(_ *tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error) {
+		renderChatFunc: func(_ fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error) {
 			t.Error("tokenizer.RenderChat must not be called for generate requests")
 			return nil, nil, nil
 		},
@@ -280,14 +285,12 @@ func TestProduce_GenerateUsesPreTokenizedIDs(t *testing.T) {
 }
 
 func TestProduce_GenerateFlattensFeatures(t *testing.T) {
-	// Generate requests with multimodal features must populate TokenizedPrompt.MultiModalFeatures
-	// in offset-sorted prompt order, so downstream prefix-cache scoring picks up image hashes.
 	tok := &mockTokenizer{
-		renderFunc: func(_ string) ([]uint32, []tokenizerTypes.Offset, error) {
+		renderFunc: func(_ fwkrh.RequestPayload) ([]uint32, []tokenizerTypes.Offset, error) {
 			t.Error("tokenizer.Render must not be called for generate requests")
 			return nil, nil, nil
 		},
-		renderChatFunc: func(_ *tokenizerTypes.RenderChatRequest) ([]uint32, *tokenization.MultiModalFeatures, error) {
+		renderChatFunc: func(_ fwkrh.RequestPayload) ([]uint32, *tokenization.MultiModalFeatures, error) {
 			t.Error("tokenizer.RenderChat must not be called for generate requests")
 			return nil, nil, nil
 		},

@@ -42,13 +42,13 @@ func (b renderBackend) produce(ctx context.Context, body *fwkrh.InferenceRequest
 		if ids := body.Completions.Prompt.TokenIDs; len(ids) > 0 {
 			return &fwkrh.TokenizedPrompt{TokenIDs: ids}, nil
 		}
-		tokenIDs, _, err := b.tk.Render(ctx, body.Completions.Prompt.PlainText())
+		tokenIDs, _, err := b.tk.Render(ctx, body.Payload)
 		if err != nil {
 			return nil, fmt.Errorf("tokenization failed: %w", err)
 		}
 		return &fwkrh.TokenizedPrompt{TokenIDs: tokenIDs}, nil
 	case body.ChatCompletions != nil:
-		tokenIDs, mmFeatures, err := b.tk.RenderChat(ctx, ChatCompletionsToRenderChatRequest(body.ChatCompletions))
+		tokenIDs, mmFeatures, err := b.tk.RenderChat(ctx, body.Payload)
 		if err != nil {
 			return nil, fmt.Errorf("tokenization failed: %w", err)
 		}
