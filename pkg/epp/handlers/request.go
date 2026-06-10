@@ -48,7 +48,12 @@ func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *Requ
 	}
 
 	for _, header := range req.RequestHeaders.Headers.Headers {
-		reqCtx.Request.Headers[strings.ToLower(header.Key)] = envoy.GetHeaderValue(header)
+		key := strings.ToLower(header.Key)
+		value := envoy.GetHeaderValue(header)
+		if key == ":path" {
+			value, _, _ = strings.Cut(value, "?")
+		}
+		reqCtx.Request.Headers[key] = value
 	}
 
 	reqCtx.ObjectiveKey, _ = metadata.GetLowerCaseHeaderValue(reqCtx.Request.Headers, metadata.ObjectiveKey)
