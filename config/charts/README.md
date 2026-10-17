@@ -284,6 +284,7 @@ kubectl wait --for=jsonpath='{.subsets[0].addresses[0].ip}' \
 | `router.epp.podSecurityContext` | Pod-level `securityContext` for EPP pods, inherited by the EPP, proxy sidecar, and sidecar-mode latency predictor containers. | `{}` |
 | `router.epp.securityContext` | Container-level `securityContext` for the EPP container. | `{}` |
 | `router.epp.podDisruptionBudget` | PodDisruptionBudget for the EPP Deployment: `{enabled, minAvailable | maxUnavailable}` (exactly one disruption field). Disabled while unset. `minAvailable` requires at least 2 effective replicas (`replicas`, or `autoscaling.minReplicas` when autoscaled) — a single-replica budget blocks all voluntary disruptions, including node drains. In sidecar proxy mode this budget governs the shared pod. | `{}` |
+| `router.epp.lifecycle` | Container lifecycle for the EPP container, rendered verbatim. Replaces the default preStop sleep of 5 seconds rendered on Kubernetes >= 1.30; an empty map disables the hook. | `{}` |
 | `router.epp.resources` | EPP container resource requests and limits. | `requests.cpu: "8"`, `requests.memory: 8Gi`, `limits.memory: 16Gi` |
 | `router.epp.pluginsConfigFile` | EPP plugins configuration file name. | `default-plugins.yaml` |
 | `router.epp.pluginsConfig` | Structured EPP configuration rendered into `pluginsConfigFile`. | `{}` |
@@ -732,6 +733,7 @@ Configures EPP to run with a proxy (Envoy proxy or Agentgateway proxy) that inte
 | `router.proxy.replicas` | Replica count for the proxy Deployment when `mode=service`. Ignored when `router.proxy.autoscaling.enabled` is `true`. | `2` |
 | `router.proxy.terminationGracePeriodSeconds` | Grace period (seconds) before SIGKILL on proxy pod teardown. Gives Envoy's 60s draining window time to complete and allows in-flight connections to drain. | `70` |
 | `router.proxy.podDisruptionBudget` | PodDisruptionBudget for the service-mode proxy Deployment: `{enabled, minAvailable | maxUnavailable}`. Ignored in sidecar mode (the EPP budget governs the shared pod). Same single-replica rule as `router.epp.podDisruptionBudget`. | `{}` |
+| `router.proxy.lifecycle` | Container lifecycle for the proxy container, rendered verbatim in both sidecar and service mode. Replaces the default preStop sleep of 5 seconds rendered on Kubernetes >= 1.30; an empty map disables the hook. Use with `router.proxy.terminationGracePeriodSeconds` for exec-based drains that outlast the default window. | `{}` |
 | `router.proxy.autoscaling.enabled` | Enable Horizontal Pod Autoscaler (HPA v2) for the proxy Deployment when `mode=service`. See [Standalone Proxy Autoscaling (Service Mode)](../../docs/operations.md#standalone-proxy-autoscaling-service-mode). | `false` |
 | `router.proxy.autoscaling.minReplicas` | Minimum number of proxy replicas for the HPA. | `1` |
 | `router.proxy.autoscaling.maxReplicas` | Maximum number of proxy replicas for the HPA. Must be greater than or equal to `minReplicas`. | `5` |
