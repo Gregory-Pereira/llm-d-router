@@ -39,8 +39,9 @@ epp:
   # Container lifecycle for the EPP container, rendered verbatim. When unset
   # or null, the chart renders a preStop sleep of 5 seconds on Kubernetes
   # >= 1.30 so endpoint removal propagates before SIGTERM. Set to override
-  # the hook, for example an exec-based drain. Set to an empty map ({}) to
-  # disable the hook and render no lifecycle at all.
+  # the hook. The EPP image is distroless, so an exec hook requires an image
+  # that ships a shell. Set to an empty map ({}) to disable the hook and
+  # render no lifecycle at all.
   # lifecycle:
   #   preStop:
   #     exec:
@@ -174,13 +175,16 @@ proxy:
   # sidecar and service mode. When unset or null, the chart renders a
   # preStop sleep of 5 seconds on Kubernetes >= 1.30 so endpoint removal
   # propagates before SIGTERM. Set to override the hook, for example an
-  # exec-based drain that fails Envoy's health check and waits for active
-  # connections to reach zero. Set to an empty map ({}) to disable the hook
-  # and render no lifecycle at all.
+  # httpGet hook that fails Envoy's health check via its admin endpoint and
+  # lets active connections drain (requires an admin listener configured in
+  # the Envoy config and its port exposed in proxy.ports). The Envoy image is
+  # distroless, so an exec hook requires an image that ships a shell. Set to
+  # an empty map ({}) to disable the hook and render no lifecycle at all.
   # lifecycle:
   #   preStop:
-  #     exec:
-  #       command: ["/bin/sh", "-c", "drain.sh"]
+  #     httpGet:
+  #       path: /healthcheck/fail
+  #       port: admin
 
 # Tokenizer sidecar. Runs vLLM's `vllm launch render <modelName>` (Python) or
 # `vllm-rs render <modelName>` (Rust) and exposes `/v1/completions/render` and
